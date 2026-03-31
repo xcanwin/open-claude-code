@@ -1,10 +1,10 @@
 {
   "name": "@xcanwin/open-claude-code",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Source-built Claude Code repackaged as open-claude-code.",
   "type": "module",
   "bin": {
-    "open-claude-code": "cli.js",
+    "open-claude-code": "bin/open-claude-code.js",
     "open-claude-code-recover": "bin/open-claude-code-recover.js"
   },
   "files": [

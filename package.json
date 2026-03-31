@@ -19,8 +19,9 @@
   ],
   "scripts": {
     "sync:runtime": "node ./scripts/sync-runtime.cjs",
+    "ensure:runtime": "node ./scripts/ensure-runtime.cjs",
     "clean:runtime": "node ./scripts/cleanup-runtime.cjs",
-    "prepack": "node ./scripts/sync-runtime.cjs",
+    "prepack": "node ./scripts/ensure-runtime.cjs",
     "test:version": "node ./cli.js --version"
   },
   "keywords": [

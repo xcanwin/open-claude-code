@@ -11,6 +11,7 @@
 npm install -g @xcanwin/open-claude-code
 open-claude-code --version
 open-claude-code --help
+open-claude-code -p "which model are you?"
 ```
 
 ## 开发者用法
@@ -22,6 +23,7 @@ npm run sync:runtime
 npm install -g .
 open-claude-code --version
 open-claude-code --help
+open-claude-code -p "which model are you?"
 ```
 
 ## 其他说明

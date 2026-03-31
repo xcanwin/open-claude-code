@@ -9,8 +9,16 @@ const runtimeDir = path.join(rootDir, 'runtime');
 const runtimeSrcDir = path.join(runtimeDir, 'src');
 const runtimeNodeModulesDir = path.join(runtimeDir, 'node_modules');
 const outDir = path.join(rootDir, 'temp', 'source-build');
+const sourceBuildDependenciesManifestPath = path.join(
+  rootDir,
+  'scripts',
+  'source-build-dependencies.json',
+);
 const shimsDir = path.join(outDir, 'shims');
 const stubsDir = path.join(outDir, 'stubs');
+const sourceBuildDependenciesManifest = JSON.parse(
+  fs.readFileSync(sourceBuildDependenciesManifestPath, 'utf8'),
+);
 const builtins = new Set(
   moduleBuiltin.builtinModules.flatMap(specifier => [
     specifier,
@@ -106,9 +114,23 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function fail(messageLines) {
+  process.stderr.write(`${messageLines.join('\n')}\n`);
+  process.exit(1);
+}
+
 if (!fs.existsSync(runtimeSrcDir)) {
   process.stderr.write(`missing recovered source directory: ${runtimeSrcDir}\n`);
   process.exit(1);
+}
+
+if (sourceBuildDependenciesManifest.claudeCodeVersion !== macro.VERSION) {
+  fail([
+    'source-build dependency manifest version mismatch',
+    `expected: ${macro.VERSION}`,
+    `received: ${sourceBuildDependenciesManifest.claudeCodeVersion ?? 'undefined'}`,
+    `manifest: ${sourceBuildDependenciesManifestPath}`,
+  ]);
 }
 
 ensureDir(outDir);
@@ -141,6 +163,36 @@ const runtimeDependencies = [...importCounts.entries()]
   .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   .map(([name]) => name)
   .filter(name => !ignorePackages.has(name) && !(name in stubPackages));
+const pinnedRuntimeDependencies = sourceBuildDependenciesManifest.dependencies ?? {};
+const pinnedRuntimeDependencyNames = Object.keys(pinnedRuntimeDependencies).sort();
+const missingPinnedDependencies = runtimeDependencies.filter(
+  name => !pinnedRuntimeDependencies[name],
+);
+const stalePinnedDependencies = pinnedRuntimeDependencyNames.filter(
+  name => !runtimeDependencies.includes(name),
+);
+const pinnedBuildDevDependencies = sourceBuildDependenciesManifest.devDependencies ?? {};
+
+if (!pinnedBuildDevDependencies.esbuild) {
+  fail([
+    'source-build dependency manifest is missing devDependencies.esbuild',
+    `manifest: ${sourceBuildDependenciesManifestPath}`,
+  ]);
+}
+
+if (missingPinnedDependencies.length > 0 || stalePinnedDependencies.length > 0) {
+  fail([
+    'source-build dependency manifest is out of date',
+    `manifest: ${sourceBuildDependenciesManifestPath}`,
+    missingPinnedDependencies.length > 0
+      ? `missing pinned dependencies: ${missingPinnedDependencies.join(', ')}`
+      : 'missing pinned dependencies: none',
+    stalePinnedDependencies.length > 0
+      ? `stale pinned dependencies: ${stalePinnedDependencies.join(', ')}`
+      : 'stale pinned dependencies: none',
+    'update the manifest before rebuilding runtime',
+  ]);
+}
 
 writeJson(
   path.join(outDir, 'dependencies.generated.json'),
@@ -150,7 +202,9 @@ writeJson(
 writeJson(
   path.join(outDir, 'package.runtime.generated.json'),
   {
-    dependencies: Object.fromEntries(runtimeDependencies.map(name => [name, 'latest'])),
+    dependencies: Object.fromEntries(
+      runtimeDependencies.map(name => [name, pinnedRuntimeDependencies[name]]),
+    ),
   },
 );
 
@@ -168,10 +222,10 @@ writeJson(path.join(outDir, 'package.json'), {
   scripts: {
     build: 'node ./build.mjs',
   },
-  dependencies: Object.fromEntries(runtimeDependencies.map(name => [name, 'latest'])),
-  devDependencies: {
-    esbuild: 'latest',
-  },
+  dependencies: Object.fromEntries(
+    runtimeDependencies.map(name => [name, pinnedRuntimeDependencies[name]]),
+  ),
+  devDependencies: pinnedBuildDevDependencies,
 });
 
 writeJson(path.join(outDir, 'tsconfig.json'), {
@@ -489,7 +543,7 @@ const featureFlagsOffPlugin = {
 
 await mkdir(distDir, { recursive: true });
 
-const buildOptions = {
+  const buildOptions = {
   entryPoints: [path.join(runtimeSrc, 'entrypoints', 'cli.tsx')],
   outfile: path.join(distDir, 'cli.js'),
   bundle: true,

@@ -1,6 +1,6 @@
 {
   "name": "@xcanwin/open-claude-code",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "Source-built Claude Code repackaged as open-claude-code.",
   "type": "module",
   "bin": {
@@ -34,14 +34,17 @@
     "url": "https://github.com/xcanwin/open-claude-code/issues"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   },
   "publishConfig": {
     "access": "public"
   },
   "license": "UNLICENSED",
   "claudeCodeVersion": "2.1.88",
-  "dependencies": {},
+  "dependencies": {
+    "tar": "7.5.13"
+  },
+  "devDependencies": {},
   "optionalDependencies": {
     "@img/sharp-darwin-arm64": "^0.34.2",
     "@img/sharp-darwin-x64": "^0.34.2",

@@ -2,6 +2,7 @@ node_modules/
 artifacts/
 *.tgz
 npm-debug.log*
+.DS_Store
 runtime/
 temp/
 AGENTS.md

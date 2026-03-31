@@ -5,6 +5,10 @@ const path = require('node:path');
 
 const rootDir = path.resolve(__dirname, '..');
 const runtimeSrcDir = path.join(rootDir, 'runtime', 'src');
+const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+const autoStubManifestPath = path.join(rootDir, 'scripts', 'auto-stub-targets.json');
+const autoStubManifest = JSON.parse(fs.readFileSync(autoStubManifestPath, 'utf8'));
+const allowedAutoStubTargets = new Set(autoStubManifest.autoStubTargets ?? []);
 
 function ensureParent(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -163,8 +167,35 @@ function makeAutoStub(ref) {
   return `${lines.join('\n')}\n`;
 }
 
+function normalizeRelativePath(filePath) {
+  return filePath.split(path.sep).join('/');
+}
+
+function isGeneratedAutoStubFile(targetPath) {
+  if (!fs.existsSync(targetPath)) return false;
+  const ext = path.extname(targetPath);
+  const source = fs.readFileSync(targetPath, 'utf8');
+  if (ext === '.txt' || ext === '.md') {
+    return source === '' || source === '\n';
+  }
+  return source.startsWith('const stub = {};\nexport default stub;\n');
+}
+
 if (!fs.existsSync(runtimeSrcDir)) {
   process.stderr.write(`missing recovered source directory: ${runtimeSrcDir}\n`);
+  process.exit(1);
+}
+
+if (autoStubManifest.claudeCodeVersion !== packageJson.claudeCodeVersion) {
+  process.stderr.write(
+    [
+      'auto stub manifest version mismatch',
+      `expected: ${packageJson.claudeCodeVersion}`,
+      `received: ${autoStubManifest.claudeCodeVersion ?? 'undefined'}`,
+      `manifest: ${autoStubManifestPath}`,
+      '',
+    ].join('\n'),
+  );
   process.exit(1);
 }
 
@@ -407,23 +438,72 @@ writeStub(
 `,
 );
 
+const generatedAutoTargets = new Set();
+const encounteredAllowedAutoTargets = new Set();
+const unexpectedAutoStubTargets = [];
+
 for (const filePath of walkFiles(runtimeSrcDir)) {
   const refs = collectLocalReferences(filePath);
   for (const [specifier, ref] of refs.entries()) {
     if (!specifier.startsWith('.') && !specifier.startsWith('src/')) continue;
     const targetPath = resolveLocalTarget(filePath, specifier);
     if (!targetPath) continue;
+    const relativeTarget = normalizeRelativePath(
+      path.relative(runtimeSrcDir, targetPath),
+    );
+    if (
+      allowedAutoStubTargets.has(relativeTarget) &&
+      isGeneratedAutoStubFile(targetPath)
+    ) {
+      encounteredAllowedAutoTargets.add(relativeTarget);
+      generatedAutoTargets.add(relativeTarget);
+      continue;
+    }
     if (hasSourceForTarget(targetPath)) continue;
+    if (!allowedAutoStubTargets.has(relativeTarget)) {
+      unexpectedAutoStubTargets.push({
+        importer: normalizeRelativePath(path.relative(runtimeSrcDir, filePath)),
+        specifier,
+        target: relativeTarget,
+      });
+      continue;
+    }
+    encounteredAllowedAutoTargets.add(relativeTarget);
+    if (generatedAutoTargets.has(relativeTarget)) continue;
 
     ensureParent(targetPath);
     const ext = path.extname(targetPath);
     if (ext === '.txt' || ext === '.md') {
       fs.writeFileSync(targetPath, '');
+      generatedAutoTargets.add(relativeTarget);
       continue;
     }
 
     fs.writeFileSync(targetPath, makeAutoStub(ref));
+    generatedAutoTargets.add(relativeTarget);
   }
+}
+
+const staleAutoStubTargets = [...allowedAutoStubTargets].filter(
+  target => !encounteredAllowedAutoTargets.has(target),
+);
+
+if (unexpectedAutoStubTargets.length > 0 || staleAutoStubTargets.length > 0) {
+  process.stderr.write(
+    [
+      'auto stub manifest is out of date',
+      `manifest: ${autoStubManifestPath}`,
+      unexpectedAutoStubTargets.length > 0
+        ? `unexpected missing targets: ${JSON.stringify(unexpectedAutoStubTargets, null, 2)}`
+        : 'unexpected missing targets: none',
+      staleAutoStubTargets.length > 0
+        ? `stale manifest targets: ${staleAutoStubTargets.join(', ')}`
+        : 'stale manifest targets: none',
+      'update the manifest before rebuilding runtime',
+      '',
+    ].join('\n'),
+  );
+  process.exit(1);
 }
 
 writeStub(

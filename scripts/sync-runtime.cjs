@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const tar = require('tar');
 
 const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
@@ -32,6 +33,10 @@ function run(command, args, options = {}) {
   }
 
   return result.stdout.trim();
+}
+
+function logStep(message) {
+  process.stdout.write(`[sync-runtime] ${message}\n`);
 }
 
 function runWithRetry(command, args, options = {}, retryOptions = {}) {
@@ -103,17 +108,47 @@ function findRecoveredDir(recoverRoot, basename) {
   return null;
 }
 
+function clonePathSync(from, to) {
+  const stat = fs.lstatSync(from);
+
+  if (stat.isSymbolicLink()) {
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.symlinkSync(fs.readlinkSync(from), to);
+    return;
+  }
+
+  if (stat.isDirectory()) {
+    fs.mkdirSync(to, { recursive: true });
+    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+      clonePathSync(path.join(from, entry.name), path.join(to, entry.name));
+    }
+    fs.chmodSync(to, stat.mode);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+  fs.chmodSync(to, stat.mode);
+}
+
 function copyIfExists(from, to) {
   if (!fs.existsSync(from)) return;
   fs.rmSync(to, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(to), { recursive: true });
-  run('cp', ['-R', from, to]);
+  clonePathSync(from, to);
+}
+
+function extractArchiveSync(file, cwd) {
+  tar.x({
+    cwd,
+    file,
+    strip: 1,
+    sync: true,
+  });
 }
 
 function removeGeneratedTargets() {
-  for (const target of ['runtime', 'cli.js', 'cli.js.map', 'src', 'vendor', 'sdk-tools.d.ts', 'LICENSE.md']) {
-    fs.rmSync(path.join(rootDir, target), { recursive: true, force: true });
-  }
+  fs.rmSync(runtimeOutputDir, { recursive: true, force: true });
+  fs.rmSync(sourceBuildDir, { recursive: true, force: true });
 }
 
 function ensureRuntimeOutputDir() {
@@ -121,7 +156,19 @@ function ensureRuntimeOutputDir() {
   fs.mkdirSync(runtimeOutputDir, { recursive: true });
 }
 
+function removePathIfExists(targetPath) {
+  try {
+    const stat = fs.lstatSync(targetPath);
+    if (stat.isSymbolicLink()) {
+      fs.unlinkSync(targetPath);
+      return;
+    }
+  } catch {}
+  fs.rmSync(targetPath, { recursive: true, force: true });
+}
+
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'open-claude-code-'));
+logStep(`packing @anthropic-ai/claude-code@${claudeCodeVersion}`);
 const archiveName = parsePackFilename(
   run('npm', ['pack', `@anthropic-ai/claude-code@${claudeCodeVersion}`, '--silent'], {
     cwd: tempRoot,
@@ -140,7 +187,9 @@ const recoverRoot = path.join(tempRoot, 'recovered');
 fs.mkdirSync(runtimeDir, { recursive: true });
 fs.mkdirSync(recoverRoot, { recursive: true });
 
-run('tar', ['-xzf', archivePath, '-C', runtimeDir, '--strip-components=1']);
+logStep('extracting upstream package');
+extractArchiveSync(archivePath, runtimeDir);
+logStep('recovering sources from sourcemap');
 run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', path.basename(runtimeDir) + '/cli.js.map'], {
   cwd: tempRoot,
 });
@@ -154,6 +203,7 @@ if (!recoveredDir) {
 removeGeneratedTargets();
 ensureRuntimeOutputDir();
 
+logStep('copying runtime assets');
 copyIfExists(path.join(runtimeDir, 'vendor'), path.join(runtimeOutputDir, 'vendor'));
 copyIfExists(path.join(runtimeDir, 'sdk-tools.d.ts'), path.join(runtimeOutputDir, 'sdk-tools.d.ts'));
 copyIfExists(path.join(runtimeDir, 'LICENSE.md'), path.join(runtimeOutputDir, 'LICENSE.md'));
@@ -163,16 +213,20 @@ copyIfExists(
   path.join(runtimeOutputDir, 'vendor', 'image-processor-src'),
 );
 
+logStep('generating source stubs');
 run('node', [path.join(rootDir, 'scripts', 'generate-source-stubs.cjs')]);
+logStep('bootstrapping source-build workspace');
 run('node', [path.join(rootDir, 'scripts', 'bootstrap-source-build.cjs')]);
+logStep('installing source-build dependencies');
 run(
   'npm',
   ['install', '--package-lock=false', '--no-audit', '--no-fund'],
   { cwd: sourceBuildDir },
 );
+logStep('building runtime CLI');
 runWithRetry(
-  'npx',
-  ['--yes', 'node@20', path.join(sourceBuildDir, 'build.mjs')],
+  process.execPath,
+  [path.join(sourceBuildDir, 'build.mjs')],
   { cwd: sourceBuildDir },
   {
     attempts: 5,
@@ -186,10 +240,13 @@ runWithRetry(
   },
 );
 
-fs.rmSync(path.join(runtimeOutputDir, 'node_modules'), { recursive: true, force: true });
+removePathIfExists(path.join(runtimeOutputDir, 'node_modules'));
+logStep('copying build artifacts');
 copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js'), path.join(runtimeOutputDir, 'cli.js'));
 copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js.map'), path.join(runtimeOutputDir, 'cli.js.map'));
 
 if (fs.existsSync(path.join(runtimeOutputDir, 'cli.js'))) {
   fs.chmodSync(path.join(runtimeOutputDir, 'cli.js'), 0o755);
 }
+
+logStep('done');

@@ -4,17 +4,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
+const require = createRequire(import.meta.url);
+const tar = require('tar');
+const packageJson = JSON.parse(
+  fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'),
+);
+const defaultClaudeCodeVersion = packageJson.claudeCodeVersion ?? '0.0.0';
 
 function usage(code = 0) {
   const text = [
     'Usage: open-claude-code-recover -v <version> -d <dir>',
     '',
     'Options:',
-    '  -v, --version   Claude Code version, default: 2.1.88',
+    `  -v, --version   Claude Code version, default: ${defaultClaudeCodeVersion}`,
     '  -d, --dir       Output directory, default: ./artifacts',
     '  -h, --help      Show this help',
   ].join('\n');
@@ -23,7 +30,7 @@ function usage(code = 0) {
 }
 
 function parseArgs(argv) {
-  const args = { version: '2.1.88', dir: 'artifacts' };
+  const args = { version: defaultClaudeCodeVersion, dir: 'artifacts' };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '-h' || arg === '--help') usage(0);
@@ -73,6 +80,15 @@ function copyDirIfExists(from, to) {
   fs.cpSync(from, to, { recursive: true });
 }
 
+function extractArchiveSync(file, cwd) {
+  tar.x({
+    cwd,
+    file,
+    strip: 1,
+    sync: true,
+  });
+}
+
 const { version, dir } = parseArgs(process.argv.slice(2));
 const outDir = path.resolve(rootDir, dir);
 const packageName = `open-claude-code-${version}`;
@@ -94,7 +110,7 @@ fs.rmSync(runtimeDir, { recursive: true, force: true });
 fs.rmSync(path.join(recoverRoot, packageName), { recursive: true, force: true });
 fs.mkdirSync(runtimeDir, { recursive: true });
 
-run('tar', ['-xzf', archivePath, '-C', runtimeDir, '--strip-components=1']);
+extractArchiveSync(archivePath, runtimeDir);
 run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', `${packageName}/cli.js.map`], {
   cwd: outDir,
 });

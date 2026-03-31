@@ -1,6 +1,6 @@
 {
   "name": "@xcanwin/open-claude-code",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Source-built Claude Code repackaged as open-claude-code.",
   "type": "module",
   "bin": {

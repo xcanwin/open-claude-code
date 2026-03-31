@@ -66,12 +66,6 @@ open-claude-code
 node ./bin/open-claude-code-recover.js -d ./artifacts
 ```
 
-### 同步说明
-
-- `npm run sync:runtime` 会输出 `packing`、`extracting`、`recovering`、`copying runtime assets`、`installing source-build dependencies`、`building runtime CLI` 等阶段日志
-- `npm run clean:runtime` 会清理 `runtime/` 和 `temp/source-build/`
-- 当前构建链路不再依赖系统 `cp -R` 或 `tar`
-
 ### AI Agent 安全沙箱
 
 - 首选 [manyoyo](https://github.com/xcanwin/manyoyo)

@@ -60,10 +60,11 @@ open-claude-code
 
 ### 源码恢复
 
-若要单独尝试 source map 恢复，可运行这个小工具。`-v` 默认读取 `package.json` 中的 `claudeCodeVersion`：
+[官方原版 2.1.88 备份](https://github.com/xcanwin/open-claude-code/releases/tag/anthropic-ai-claude-code-2.1.88)
+若要单独尝试 source map 恢复，可运行这个小工具：
 
 ```bash
-node ./bin/open-claude-code-recover.js -d ./artifacts
+node ./bin/open-claude-code-recover.js -d ./artifacts -v 2.1.88
 ```
 
 ### AI Agent 安全沙箱

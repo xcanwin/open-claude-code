@@ -36,6 +36,7 @@ const stubPackages = {
   '@ant/computer-use-mcp/sentinelApps': 'ant-computer-use-mcp-sentinel-apps.js',
   '@ant/computer-use-mcp/types': 'ant-computer-use-mcp-types.js',
   '@ant/computer-use-swift': 'ant-computer-use-swift.js',
+  '@anthropic-ai/claude-agent-sdk': 'anthropic-claude-agent-sdk.js',
   '@anthropic-ai/sandbox-runtime': 'anthropic-sandbox-runtime.js',
   'audio-capture-napi': 'audio-capture-napi.js',
   'color-diff-napi': 'color-diff-napi.js',
@@ -383,6 +384,8 @@ const api = {
 };
 
 export default api;
+`,
+  'anthropic-claude-agent-sdk.js': `export {};
 `,
   'anthropic-sandbox-runtime.js': `export class SandboxViolationStore {}
 

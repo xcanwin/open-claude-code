@@ -10,6 +10,8 @@ const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const claudeCodeVersion = packageJson.claudeCodeVersion;
+const claudeCodeArchiveFallbackBaseUrl =
+  packageJson.claudeCodeArchiveFallbackBaseUrl ?? '';
 const runtimeOutputDir = path.join(rootDir, 'runtime');
 const sourceBuildDir = path.join(rootDir, 'temp', 'source-build');
 
@@ -32,7 +34,7 @@ function run(command, args, options = {}) {
     process.exit(result.status ?? 1);
   }
 
-  return result.stdout.trim();
+  return (result.stdout ?? '').trim();
 }
 
 function logStep(message) {
@@ -91,6 +93,101 @@ function parsePackFilename(output) {
 
   process.stderr.write(`unable to parse npm pack output: ${trimmed}\n`);
   process.exit(1);
+}
+
+function formatArchiveName(version) {
+  return `anthropic-ai-claude-code-${version}.tgz`;
+}
+
+function formatArchiveFallbackUrl(version) {
+  if (!claudeCodeArchiveFallbackBaseUrl) return null;
+  const baseUrl = claudeCodeArchiveFallbackBaseUrl.replace(/\/+$/, '');
+  const archiveName = formatArchiveName(version);
+  return `${baseUrl}/${archiveName.slice(0, -4)}/${archiveName}`;
+}
+
+function tryPackArchive(tempRoot, version) {
+  const result = spawnSync(
+    'npm',
+    ['pack', `@anthropic-ai/claude-code@${version}`, '--silent'],
+    {
+      cwd: tempRoot,
+      encoding: 'utf8',
+      stdio: ['inherit', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        npm_config_json: '',
+        npm_config_dry_run: '',
+        npm_config_pack_destination: '',
+      },
+    },
+  );
+
+  if (result.status === 0) {
+    return {
+      archivePath: path.join(tempRoot, parsePackFilename(result.stdout ?? '')),
+      source: 'npm',
+    };
+  }
+
+  return {
+    source: 'npm',
+    status: result.status ?? 1,
+    output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim(),
+  };
+}
+
+function downloadArchiveFallback(tempRoot, version) {
+  const url = formatArchiveFallbackUrl(version);
+  if (!url) {
+    process.stderr.write('package.json is missing claudeCodeArchiveFallbackBaseUrl\n');
+    process.exit(1);
+  }
+
+  const archiveName = parsePackFilename(
+    runWithRetry(
+      'npm',
+      ['pack', url, '--silent'],
+      {
+        cwd: tempRoot,
+        env: {
+          ...process.env,
+          npm_config_json: '',
+          npm_config_dry_run: '',
+          npm_config_pack_destination: '',
+        },
+      },
+      {
+        attempts: 3,
+        label: `fallback archive download for @anthropic-ai/claude-code@${version}`,
+      },
+    ),
+  );
+  return {
+    archivePath: path.join(tempRoot, archiveName),
+    source: 'github-release',
+    url,
+  };
+}
+
+async function resolveArchive(tempRoot, version) {
+  if (process.env.OPEN_CLAUDE_CODE_FORCE_ARCHIVE_FALLBACK === '1') {
+    logStep(`downloading fallback archive for @anthropic-ai/claude-code@${version}`);
+    return downloadArchiveFallback(tempRoot, version);
+  }
+
+  const packed = tryPackArchive(tempRoot, version);
+  if (packed.archivePath) return packed;
+
+  process.stderr.write(
+    `npm pack failed for @anthropic-ai/claude-code@${version}, trying fallback archive\n`,
+  );
+  if (packed.output) {
+    process.stderr.write(`${packed.output}\n`);
+  }
+
+  logStep(`downloading fallback archive for @anthropic-ai/claude-code@${version}`);
+  return downloadArchiveFallback(tempRoot, version);
 }
 
 function findRecoveredDir(recoverRoot, basename) {
@@ -167,86 +264,83 @@ function removePathIfExists(targetPath) {
   fs.rmSync(targetPath, { recursive: true, force: true });
 }
 
-const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'open-claude-code-'));
-logStep(`packing @anthropic-ai/claude-code@${claudeCodeVersion}`);
-const archiveName = parsePackFilename(
-  run('npm', ['pack', `@anthropic-ai/claude-code@${claudeCodeVersion}`, '--silent'], {
+async function main() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'open-claude-code-'));
+  logStep(`packing @anthropic-ai/claude-code@${claudeCodeVersion}`);
+  const resolvedArchive = await resolveArchive(tempRoot, claudeCodeVersion);
+  const archivePath = resolvedArchive.archivePath;
+  const runtimeDir = path.join(tempRoot, `open-claude-code-${claudeCodeVersion}`);
+  const recoverRoot = path.join(tempRoot, 'recovered');
+
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.mkdirSync(recoverRoot, { recursive: true });
+
+  logStep('extracting upstream package');
+  extractArchiveSync(archivePath, runtimeDir);
+  logStep('recovering sources from sourcemap');
+  run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', path.basename(runtimeDir) + '/cli.js.map'], {
     cwd: tempRoot,
-    env: {
-      ...process.env,
-      npm_config_json: '',
-      npm_config_dry_run: '',
-      npm_config_pack_destination: '',
+  });
+
+  const recoveredDir = findRecoveredDir(recoverRoot, path.basename(runtimeDir));
+  if (!recoveredDir) {
+    process.stderr.write(`missing recovered source tree for ${path.basename(runtimeDir)}\n`);
+    process.exit(1);
+  }
+
+  removeGeneratedTargets();
+  ensureRuntimeOutputDir();
+
+  logStep('copying runtime assets');
+  copyIfExists(path.join(runtimeDir, 'vendor'), path.join(runtimeOutputDir, 'vendor'));
+  copyIfExists(path.join(runtimeDir, 'sdk-tools.d.ts'), path.join(runtimeOutputDir, 'sdk-tools.d.ts'));
+  copyIfExists(path.join(runtimeDir, 'LICENSE.md'), path.join(runtimeOutputDir, 'LICENSE.md'));
+  copyIfExists(path.join(recoveredDir, 'src'), path.join(runtimeOutputDir, 'src'));
+  copyIfExists(
+    path.join(recoveredDir, 'vendor', 'image-processor-src'),
+    path.join(runtimeOutputDir, 'vendor', 'image-processor-src'),
+  );
+
+  logStep('generating source stubs');
+  run('node', [path.join(rootDir, 'scripts', 'generate-source-stubs.cjs')]);
+  logStep('bootstrapping source-build workspace');
+  run('node', [path.join(rootDir, 'scripts', 'bootstrap-source-build.cjs')]);
+  logStep('installing source-build dependencies');
+  run(
+    'npm',
+    ['install', '--package-lock=false', '--no-audit', '--no-fund'],
+    { cwd: sourceBuildDir },
+  );
+  logStep('building runtime CLI');
+  runWithRetry(
+    process.execPath,
+    [path.join(sourceBuildDir, 'build.mjs')],
+    { cwd: sourceBuildDir },
+    {
+      attempts: 5,
+      label: 'source build',
+      retryOn(output) {
+        return (
+          output.includes('The service was stopped') ||
+          output.includes('The service is no longer running')
+        );
+      },
     },
-  }),
-);
-const archivePath = path.join(tempRoot, archiveName);
-const runtimeDir = path.join(tempRoot, `open-claude-code-${claudeCodeVersion}`);
-const recoverRoot = path.join(tempRoot, 'recovered');
+  );
 
-fs.mkdirSync(runtimeDir, { recursive: true });
-fs.mkdirSync(recoverRoot, { recursive: true });
+  removePathIfExists(path.join(runtimeOutputDir, 'node_modules'));
+  logStep('copying build artifacts');
+  copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js'), path.join(runtimeOutputDir, 'cli.js'));
+  copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js.map'), path.join(runtimeOutputDir, 'cli.js.map'));
 
-logStep('extracting upstream package');
-extractArchiveSync(archivePath, runtimeDir);
-logStep('recovering sources from sourcemap');
-run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', path.basename(runtimeDir) + '/cli.js.map'], {
-  cwd: tempRoot,
-});
+  if (fs.existsSync(path.join(runtimeOutputDir, 'cli.js'))) {
+    fs.chmodSync(path.join(runtimeOutputDir, 'cli.js'), 0o755);
+  }
 
-const recoveredDir = findRecoveredDir(recoverRoot, path.basename(runtimeDir));
-if (!recoveredDir) {
-  process.stderr.write(`missing recovered source tree for ${path.basename(runtimeDir)}\n`);
+  logStep('done');
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
   process.exit(1);
-}
-
-removeGeneratedTargets();
-ensureRuntimeOutputDir();
-
-logStep('copying runtime assets');
-copyIfExists(path.join(runtimeDir, 'vendor'), path.join(runtimeOutputDir, 'vendor'));
-copyIfExists(path.join(runtimeDir, 'sdk-tools.d.ts'), path.join(runtimeOutputDir, 'sdk-tools.d.ts'));
-copyIfExists(path.join(runtimeDir, 'LICENSE.md'), path.join(runtimeOutputDir, 'LICENSE.md'));
-copyIfExists(path.join(recoveredDir, 'src'), path.join(runtimeOutputDir, 'src'));
-copyIfExists(
-  path.join(recoveredDir, 'vendor', 'image-processor-src'),
-  path.join(runtimeOutputDir, 'vendor', 'image-processor-src'),
-);
-
-logStep('generating source stubs');
-run('node', [path.join(rootDir, 'scripts', 'generate-source-stubs.cjs')]);
-logStep('bootstrapping source-build workspace');
-run('node', [path.join(rootDir, 'scripts', 'bootstrap-source-build.cjs')]);
-logStep('installing source-build dependencies');
-run(
-  'npm',
-  ['install', '--package-lock=false', '--no-audit', '--no-fund'],
-  { cwd: sourceBuildDir },
-);
-logStep('building runtime CLI');
-runWithRetry(
-  process.execPath,
-  [path.join(sourceBuildDir, 'build.mjs')],
-  { cwd: sourceBuildDir },
-  {
-    attempts: 5,
-    label: 'source build',
-    retryOn(output) {
-      return (
-        output.includes('The service was stopped') ||
-        output.includes('The service is no longer running')
-      );
-    },
-  },
-);
-
-removePathIfExists(path.join(runtimeOutputDir, 'node_modules'));
-logStep('copying build artifacts');
-copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js'), path.join(runtimeOutputDir, 'cli.js'));
-copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js.map'), path.join(runtimeOutputDir, 'cli.js.map'));
-
-if (fs.existsSync(path.join(runtimeOutputDir, 'cli.js'))) {
-  fs.chmodSync(path.join(runtimeOutputDir, 'cli.js'), 0o755);
-}
-
-logStep('done');
+});

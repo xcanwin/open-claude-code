@@ -1,6 +1,6 @@
 {
   "name": "@xcanwin/open-claude-code",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Source-built Claude Code repackaged as open-claude-code.",
   "type": "module",
   "bin": {
@@ -41,6 +41,7 @@
   },
   "license": "UNLICENSED",
   "claudeCodeVersion": "2.1.88",
+  "claudeCodeArchiveFallbackBaseUrl": "https://github.com/xcanwin/open-claude-code/releases/download",
   "dependencies": {
     "tar": "7.5.13"
   },

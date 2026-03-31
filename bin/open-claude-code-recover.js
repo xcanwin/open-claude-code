@@ -15,6 +15,7 @@ const packageJson = JSON.parse(
   fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'),
 );
 const defaultClaudeCodeVersion = packageJson.claudeCodeVersion ?? '0.0.0';
+const archiveFallbackBaseUrl = packageJson.claudeCodeArchiveFallbackBaseUrl ?? '';
 
 function usage(code = 0) {
   const text = [
@@ -74,10 +75,33 @@ function findRecoveredDir(recoverRoot, packageName) {
   return null;
 }
 
+function clonePathSync(from, to) {
+  const stat = fs.lstatSync(from);
+
+  if (stat.isSymbolicLink()) {
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.symlinkSync(fs.readlinkSync(from), to);
+    return;
+  }
+
+  if (stat.isDirectory()) {
+    fs.mkdirSync(to, { recursive: true });
+    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+      clonePathSync(path.join(from, entry.name), path.join(to, entry.name));
+    }
+    fs.chmodSync(to, stat.mode);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+  fs.chmodSync(to, stat.mode);
+}
+
 function copyDirIfExists(from, to) {
   if (!fs.existsSync(from)) return;
-  fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.cpSync(from, to, { recursive: true });
+  fs.rmSync(to, { recursive: true, force: true });
+  clonePathSync(from, to);
 }
 
 function extractArchiveSync(file, cwd) {
@@ -89,52 +113,111 @@ function extractArchiveSync(file, cwd) {
   });
 }
 
-const { version, dir } = parseArgs(process.argv.slice(2));
-const outDir = path.resolve(rootDir, dir);
-const packageName = `open-claude-code-${version}`;
-const archiveName = `anthropic-ai-claude-code-${version}.tgz`;
-const archivePath = path.join(outDir, archiveName);
-const runtimeDir = path.join(outDir, packageName);
-const recoverRoot = path.join(outDir, 'recovered');
+function formatArchiveName(version) {
+  return `anthropic-ai-claude-code-${version}.tgz`;
+}
 
-fs.mkdirSync(outDir, { recursive: true });
-fs.mkdirSync(recoverRoot, { recursive: true });
+function formatArchiveFallbackUrl(version) {
+  if (!archiveFallbackBaseUrl) return null;
+  const baseUrl = archiveFallbackBaseUrl.replace(/\/+$/, '');
+  const archiveName = formatArchiveName(version);
+  return `${baseUrl}/${archiveName.slice(0, -4)}/${archiveName}`;
+}
 
-if (!fs.existsSync(archivePath)) {
-  run('npm', ['pack', `@anthropic-ai/claude-code@${version}`, '--silent'], {
+function tryPackArchive(version, outDir) {
+  const result = spawnSync(
+    'npm',
+    ['pack', `@anthropic-ai/claude-code@${version}`, '--silent'],
+    {
+      cwd: outDir,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+
+  if (result.status === 0) {
+    return true;
+  }
+
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+  process.stderr.write(
+    `npm pack failed for @anthropic-ai/claude-code@${version}, trying fallback archive\n`,
+  );
+  if (output) {
+    process.stderr.write(`${output}\n`);
+  }
+  return false;
+}
+
+function downloadArchiveFallback(version, outDir) {
+  const url = formatArchiveFallbackUrl(version);
+  if (!url) {
+    process.stderr.write('package.json is missing claudeCodeArchiveFallbackBaseUrl\n');
+    process.exit(1);
+  }
+
+  run('npm', ['pack', url, '--silent'], {
     cwd: outDir,
   });
 }
 
-fs.rmSync(runtimeDir, { recursive: true, force: true });
-fs.rmSync(path.join(recoverRoot, packageName), { recursive: true, force: true });
-fs.mkdirSync(runtimeDir, { recursive: true });
+async function main() {
+  const { version, dir } = parseArgs(process.argv.slice(2));
+  const outDir = path.resolve(rootDir, dir);
+  const packageName = `open-claude-code-${version}`;
+  const archiveName = formatArchiveName(version);
+  const archivePath = path.join(outDir, archiveName);
+  const runtimeDir = path.join(outDir, packageName);
+  const recoverRoot = path.join(outDir, 'recovered');
 
-extractArchiveSync(archivePath, runtimeDir);
-run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', `${packageName}/cli.js.map`], {
-  cwd: outDir,
-});
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(recoverRoot, { recursive: true });
 
-const recoveredDir = findRecoveredDir(recoverRoot, packageName);
-if (!recoveredDir) {
-  process.stderr.write(`missing recovered source tree for ${packageName}\n`);
-  process.exit(1);
+  if (!fs.existsSync(archivePath)) {
+    const shouldForceFallback =
+      process.env.OPEN_CLAUDE_CODE_FORCE_ARCHIVE_FALLBACK === '1';
+    if (!shouldForceFallback && tryPackArchive(version, outDir)) {
+      // npm pack writes the archive directly into outDir.
+    } else {
+      downloadArchiveFallback(version, outDir);
+    }
+  }
+
+  fs.rmSync(runtimeDir, { recursive: true, force: true });
+  fs.rmSync(path.join(recoverRoot, packageName), { recursive: true, force: true });
+  fs.mkdirSync(runtimeDir, { recursive: true });
+
+  extractArchiveSync(archivePath, runtimeDir);
+  run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', `${packageName}/cli.js.map`], {
+    cwd: outDir,
+  });
+
+  const recoveredDir = findRecoveredDir(recoverRoot, packageName);
+  if (!recoveredDir) {
+    process.stderr.write(`missing recovered source tree for ${packageName}\n`);
+    process.exit(1);
+  }
+
+  copyDirIfExists(path.join(recoveredDir, 'src'), path.join(runtimeDir, 'src'));
+  copyDirIfExists(
+    path.join(recoveredDir, 'vendor', 'image-processor-src'),
+    path.join(runtimeDir, 'vendor', 'image-processor-src'),
+  );
+
+  run(process.execPath, [path.join(runtimeDir, 'cli.js'), '--version']);
+
+  process.stdout.write(
+    [
+      '',
+      `runnable package: ${runtimeDir}`,
+      `recovered tree:   ${recoveredDir}`,
+      `run command:      node ${path.join(runtimeDir, 'cli.js')} --version`,
+      '',
+    ].join('\n'),
+  );
 }
 
-copyDirIfExists(path.join(recoveredDir, 'src'), path.join(runtimeDir, 'src'));
-copyDirIfExists(
-  path.join(recoveredDir, 'vendor', 'image-processor-src'),
-  path.join(runtimeDir, 'vendor', 'image-processor-src'),
-);
-
-run(process.execPath, [path.join(runtimeDir, 'cli.js'), '--version']);
-
-process.stdout.write(
-  [
-    '',
-    `runnable package: ${runtimeDir}`,
-    `recovered tree:   ${recoveredDir}`,
-    `run command:      node ${path.join(runtimeDir, 'cli.js')} --version`,
-    '',
-  ].join('\n'),
-);
+main().catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+  process.exit(1);
+});

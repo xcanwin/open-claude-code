@@ -135,7 +135,7 @@ run(
   ['install', '--package-lock=false', '--no-audit', '--no-fund'],
   { cwd: sourceBuildDir },
 );
-run('npm', ['run', 'build'], { cwd: sourceBuildDir });
+run('node', [path.join(sourceBuildDir, 'build.mjs')], { cwd: sourceBuildDir });
 
 removeGeneratedTargets();
 

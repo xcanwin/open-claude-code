@@ -2,7 +2,7 @@
 
 ## 介绍
 
-- 本项目是可安装、可运行、可调试的源码版 Claude Code
+- 与单纯解包不同，这是全球首个可安装、可运行、可调试、非常干净的源码版 Claude Code
 - `@xcanwin/open-claude-code` 是一个可直接安装的 Claude Code 命令行包，安装后可直接使用 `open-claude-code` 命令
 
 ## 普通用法

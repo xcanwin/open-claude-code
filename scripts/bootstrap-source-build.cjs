@@ -405,12 +405,12 @@ export function startNativeRecording() {
 
 export function stopNativeRecording() {}
 `,
-  'color-diff-napi.js': `export class ColorDiff {}
-export class ColorFile {}
-
-export function getSyntaxTheme() {
-  return null;
-}
+  'color-diff-napi.js': `export {
+  ColorDiff,
+  ColorFile,
+  getSyntaxTheme,
+  getNativeModule,
+} from '../../runtime/src/native-ts/color-diff/index.ts';
 `,
   'image-processor-napi.js': `import sharp from 'sharp';
 

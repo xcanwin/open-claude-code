@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 function usage(code = 0) {
   const text = [
-    'Usage: node ./bin/open-claude-code.js -v <version> -d <dir>',
+    'Usage: open-claude-code-recover -v <version> -d <dir>',
     '',
     'Options:',
     '  -v, --version   Claude Code version, default: 2.1.88',
@@ -67,7 +70,7 @@ function findRecoveredDir(recoverRoot, packageName) {
 function copyDirIfExists(from, to) {
   if (!fs.existsSync(from)) return;
   fs.mkdirSync(path.dirname(to), { recursive: true });
-  run('cp', ['-R', from, to]);
+  fs.cpSync(from, to, { recursive: true });
 }
 
 const { version, dir } = parseArgs(process.argv.slice(2));

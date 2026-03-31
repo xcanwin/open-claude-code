@@ -1,0 +1,60 @@
+{
+  "name": "@xcanwin/open-claude-code",
+  "version": "0.1.0",
+  "description": "Source-built Claude Code repackaged as open-claude-code.",
+  "type": "module",
+  "bin": {
+    "open-claude-code": "cli.js",
+    "open-claude-code-recover": "bin/open-claude-code-recover.js"
+  },
+  "files": [
+    "cli.js",
+    "src",
+    "vendor",
+    "sdk-tools.d.ts",
+    "LICENSE.md",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "sync:runtime": "node ./scripts/sync-runtime.cjs",
+    "clean:runtime": "node ./scripts/cleanup-runtime.cjs",
+    "prepack": "node ./scripts/sync-runtime.cjs",
+    "postpack": "node ./scripts/cleanup-runtime.cjs",
+    "test:version": "node ./cli.js --version"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "cli",
+    "open-source"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xcanwin/open-claude-code.git"
+  },
+  "homepage": "https://github.com/xcanwin/open-claude-code",
+  "bugs": {
+    "url": "https://github.com/xcanwin/open-claude-code/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "UNLICENSED",
+  "claudeCodeVersion": "2.1.88",
+  "dependencies": {},
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "^0.34.2",
+    "@img/sharp-darwin-x64": "^0.34.2",
+    "@img/sharp-linux-arm": "^0.34.2",
+    "@img/sharp-linux-arm64": "^0.34.2",
+    "@img/sharp-linux-x64": "^0.34.2",
+    "@img/sharp-linuxmusl-arm64": "^0.34.2",
+    "@img/sharp-linuxmusl-x64": "^0.34.2",
+    "@img/sharp-win32-arm64": "^0.34.2",
+    "@img/sharp-win32-x64": "^0.34.2"
+  }
+}

@@ -1,8 +1,9 @@
 # Open Claude Code
 
-`@xcanwin/open-claude-code` 是一个可直接安装的 Claude Code 命令行包。
+## 介绍
 
-安装后可直接使用 `open-claude-code` 命令。
+- 本项目是可安装、可运行、可调试的源码版 Claude Code
+- `@xcanwin/open-claude-code` 是一个可直接安装的 Claude Code 命令行包，安装后可直接使用 `open-claude-code` 命令
 
 ## 普通用法
 
@@ -14,6 +15,17 @@ open-claude-code --help
 
 ## 开发者用法
 
+本地调试可以用：
+
+```bash
+npm run sync:runtime
+npm install -g .
+open-claude-code --version
+open-claude-code --help
+```
+
+## 其他说明
+
 本仓库的发布流程是：
 
 1. 解包 `@anthropic-ai/claude-code`
@@ -23,15 +35,7 @@ open-claude-code --help
 
 生成出来的运行时文件不会长期留在仓库根目录，打包后会自动清理到 `./temp/runtime/`。
 
-本地调试可以用：
-
-```bash
-npm run sync:runtime
-node ./cli.js --version
-node ./cli.js --help
-```
-
-如果你要单独做 source map 恢复，也保留了：
+如果你要单独做 source map 恢复，也运行这个小工具：
 
 ```bash
 node ./bin/open-claude-code-recover.js -v 2.1.88 -d ./artifacts

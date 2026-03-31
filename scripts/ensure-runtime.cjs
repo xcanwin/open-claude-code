@@ -6,12 +6,12 @@ const { spawnSync } = require('node:child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const requiredTargets = [
-  'cli.js',
-  'cli.js.map',
-  'src',
-  'vendor',
-  'sdk-tools.d.ts',
-  'LICENSE.md',
+  path.join('runtime', 'cli.js'),
+  path.join('runtime', 'cli.js.map'),
+  path.join('runtime', 'src'),
+  path.join('runtime', 'vendor'),
+  path.join('runtime', 'sdk-tools.d.ts'),
+  path.join('runtime', 'LICENSE.md'),
 ];
 
 const missingTargets = requiredTargets.filter(target => {

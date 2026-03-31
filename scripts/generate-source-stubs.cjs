@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const rootDir = path.resolve(__dirname, '..');
-const runtimeSrcDir = path.join(rootDir, 'temp', 'runtime', 'src');
+const runtimeSrcDir = path.join(rootDir, 'runtime', 'src');
 
 function ensureParent(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });

@@ -9,7 +9,7 @@ const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const claudeCodeVersion = packageJson.claudeCodeVersion;
-const tempRuntimeDir = path.join(rootDir, 'temp', 'runtime');
+const runtimeOutputDir = path.join(rootDir, 'runtime');
 const sourceBuildDir = path.join(rootDir, 'temp', 'source-build');
 
 if (!claudeCodeVersion) {
@@ -111,14 +111,14 @@ function copyIfExists(from, to) {
 }
 
 function removeGeneratedTargets() {
-  for (const target of ['cli.js', 'cli.js.map', 'src', 'vendor', 'sdk-tools.d.ts', 'LICENSE.md']) {
+  for (const target of ['runtime', 'cli.js', 'cli.js.map', 'src', 'vendor', 'sdk-tools.d.ts', 'LICENSE.md']) {
     fs.rmSync(path.join(rootDir, target), { recursive: true, force: true });
   }
 }
 
-function ensureTempRuntimeDir() {
-  fs.rmSync(tempRuntimeDir, { recursive: true, force: true });
-  fs.mkdirSync(tempRuntimeDir, { recursive: true });
+function ensureRuntimeOutputDir() {
+  fs.rmSync(runtimeOutputDir, { recursive: true, force: true });
+  fs.mkdirSync(runtimeOutputDir, { recursive: true });
 }
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'open-claude-code-'));
@@ -151,15 +151,16 @@ if (!recoveredDir) {
   process.exit(1);
 }
 
-ensureTempRuntimeDir();
+removeGeneratedTargets();
+ensureRuntimeOutputDir();
 
-copyIfExists(path.join(runtimeDir, 'vendor'), path.join(tempRuntimeDir, 'vendor'));
-copyIfExists(path.join(runtimeDir, 'sdk-tools.d.ts'), path.join(tempRuntimeDir, 'sdk-tools.d.ts'));
-copyIfExists(path.join(runtimeDir, 'LICENSE.md'), path.join(tempRuntimeDir, 'LICENSE.md'));
-copyIfExists(path.join(recoveredDir, 'src'), path.join(tempRuntimeDir, 'src'));
+copyIfExists(path.join(runtimeDir, 'vendor'), path.join(runtimeOutputDir, 'vendor'));
+copyIfExists(path.join(runtimeDir, 'sdk-tools.d.ts'), path.join(runtimeOutputDir, 'sdk-tools.d.ts'));
+copyIfExists(path.join(runtimeDir, 'LICENSE.md'), path.join(runtimeOutputDir, 'LICENSE.md'));
+copyIfExists(path.join(recoveredDir, 'src'), path.join(runtimeOutputDir, 'src'));
 copyIfExists(
   path.join(recoveredDir, 'vendor', 'image-processor-src'),
-  path.join(tempRuntimeDir, 'vendor', 'image-processor-src'),
+  path.join(runtimeOutputDir, 'vendor', 'image-processor-src'),
 );
 
 run('node', [path.join(rootDir, 'scripts', 'generate-source-stubs.cjs')]);
@@ -185,15 +186,10 @@ runWithRetry(
   },
 );
 
-removeGeneratedTargets();
+fs.rmSync(path.join(runtimeOutputDir, 'node_modules'), { recursive: true, force: true });
+copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js'), path.join(runtimeOutputDir, 'cli.js'));
+copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js.map'), path.join(runtimeOutputDir, 'cli.js.map'));
 
-copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js'), path.join(rootDir, 'cli.js'));
-copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js.map'), path.join(rootDir, 'cli.js.map'));
-copyIfExists(path.join(tempRuntimeDir, 'vendor'), path.join(rootDir, 'vendor'));
-copyIfExists(path.join(tempRuntimeDir, 'sdk-tools.d.ts'), path.join(rootDir, 'sdk-tools.d.ts'));
-copyIfExists(path.join(tempRuntimeDir, 'LICENSE.md'), path.join(rootDir, 'LICENSE.md'));
-copyIfExists(path.join(tempRuntimeDir, 'src'), path.join(rootDir, 'src'));
-
-if (fs.existsSync(path.join(rootDir, 'cli.js'))) {
-  fs.chmodSync(path.join(rootDir, 'cli.js'), 0o755);
+if (fs.existsSync(path.join(runtimeOutputDir, 'cli.js'))) {
+  fs.chmodSync(path.join(runtimeOutputDir, 'cli.js'), 0o755);
 }

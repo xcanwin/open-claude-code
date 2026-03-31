@@ -5,8 +5,9 @@ const path = require('node:path');
 const moduleBuiltin = require('node:module');
 
 const rootDir = path.resolve(__dirname, '..');
-const runtimeSrcDir = path.join(rootDir, 'temp', 'runtime', 'src');
-const runtimeNodeModulesDir = path.join(rootDir, 'temp', 'runtime', 'node_modules');
+const runtimeDir = path.join(rootDir, 'runtime');
+const runtimeSrcDir = path.join(runtimeDir, 'src');
+const runtimeNodeModulesDir = path.join(runtimeDir, 'node_modules');
 const outDir = path.join(rootDir, 'temp', 'source-build');
 const shimsDir = path.join(outDir, 'shims');
 const stubsDir = path.join(outDir, 'stubs');
@@ -182,7 +183,7 @@ writeJson(path.join(outDir, 'tsconfig.json'), {
     allowJs: true,
     baseUrl: '.',
     paths: {
-      'src/*': ['../runtime/src/*'],
+      'src/*': ['../../runtime/src/*'],
       'bun:bundle': ['./shims/bun-bundle.js'],
       'bun:ffi': ['./shims/bun-ffi.js'],
     },
@@ -192,7 +193,7 @@ writeJson(path.join(outDir, 'tsconfig.json'), {
     skipLibCheck: true,
     noEmit: true,
   },
-  include: ['../runtime/src/**/*', './shims/**/*'],
+  include: ['../../runtime/src/**/*', './shims/**/*'],
 });
 
 fs.writeFileSync(
@@ -410,7 +411,7 @@ export function stopNativeRecording() {}
   ColorFile,
   getSyntaxTheme,
   getNativeModule,
-} from '../../runtime/src/native-ts/color-diff/index.ts';
+} from '../../../runtime/src/native-ts/color-diff/index.ts';
 `,
   'image-processor-napi.js': `import sharp from 'sharp';
 
@@ -447,7 +448,7 @@ import { build } from 'esbuild';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const runtimeRoot = path.resolve(__dirname, '../runtime');
+const runtimeRoot = path.resolve(__dirname, '../../runtime');
 const runtimeSrc = path.join(runtimeRoot, 'src');
 const distDir = path.join(__dirname, 'dist');
 const stubAliases = ${JSON.stringify(

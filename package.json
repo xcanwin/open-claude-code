@@ -1,6 +1,6 @@
 {
   "name": "@xcanwin/open-claude-code",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Source-built Claude Code repackaged as open-claude-code.",
   "type": "module",
   "bin": {
@@ -8,12 +8,7 @@
     "open-claude-code-recover": "bin/open-claude-code-recover.js"
   },
   "files": [
-    "cli.js",
-    "cli.js.map",
-    "src",
-    "vendor",
-    "sdk-tools.d.ts",
-    "LICENSE.md",
+    "runtime",
     "bin",
     "README.md"
   ],
@@ -22,7 +17,7 @@
     "ensure:runtime": "node ./scripts/ensure-runtime.cjs",
     "clean:runtime": "node ./scripts/cleanup-runtime.cjs",
     "prepack": "node ./scripts/ensure-runtime.cjs",
-    "test:version": "node ./cli.js --version"
+    "test:version": "node ./bin/open-claude-code.js --version"
   },
   "keywords": [
     "claude",

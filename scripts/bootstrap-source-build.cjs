@@ -495,7 +495,8 @@ const buildOptions = {
   platform: 'node',
   format: 'esm',
   target: 'node20',
-  sourcemap: false,
+  sourcemap: true,
+  sourcesContent: false,
   logLevel: 'info',
   legalComments: 'none',
   banner: {

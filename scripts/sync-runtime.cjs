@@ -188,6 +188,7 @@ runWithRetry(
 removeGeneratedTargets();
 
 copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js'), path.join(rootDir, 'cli.js'));
+copyIfExists(path.join(sourceBuildDir, 'dist', 'cli.js.map'), path.join(rootDir, 'cli.js.map'));
 copyIfExists(path.join(tempRuntimeDir, 'vendor'), path.join(rootDir, 'vendor'));
 copyIfExists(path.join(tempRuntimeDir, 'sdk-tools.d.ts'), path.join(rootDir, 'sdk-tools.d.ts'));
 copyIfExists(path.join(tempRuntimeDir, 'LICENSE.md'), path.join(rootDir, 'LICENSE.md'));

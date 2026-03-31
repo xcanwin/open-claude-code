@@ -1,6 +1,6 @@
 {
   "name": "@xcanwin/open-claude-code",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Source-built Claude Code repackaged as open-claude-code.",
   "type": "module",
   "bin": {
@@ -20,7 +20,7 @@
     "sync:runtime": "node ./scripts/sync-runtime.cjs",
     "clean:runtime": "node ./scripts/cleanup-runtime.cjs",
     "prepack": "node ./scripts/sync-runtime.cjs",
-    "postpack": "node ./scripts/cleanup-runtime.cjs",
+    "postpublish": "node ./scripts/cleanup-runtime.cjs",
     "test:version": "node ./cli.js --version"
   },
   "keywords": [

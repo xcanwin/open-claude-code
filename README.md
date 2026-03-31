@@ -144,6 +144,7 @@ open-claude-code
 #### 源码恢复
 
 [官方原版 2.1.88 备份](https://github.com/xcanwin/open-claude-code/releases/tag/anthropic-ai-claude-code-2.1.88)
+
 若要单独尝试 source map 恢复，可运行这个小工具：
 
 ```bash

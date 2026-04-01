@@ -10,7 +10,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const require = createRequire(import.meta.url);
-const tar = require('tar');
+const {
+  copyIfExists,
+  createTempRoot,
+  ensureSourceMapComment,
+  extractArchiveSync,
+  formatArchiveName,
+  recoverSources,
+  resolveArchive,
+  rewriteSourceMapPaths,
+} = require(path.join(rootDir, 'scripts', 'runtime-utils.cjs'));
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'),
 );
@@ -49,118 +58,6 @@ function parseArgs(argv) {
   return args;
 }
 
-function run(command, commandArgs, options = {}) {
-  const result = spawnSync(command, commandArgs, {
-    stdio: 'inherit',
-    cwd: rootDir,
-    ...options,
-  });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-}
-
-function findRecoveredDir(recoverRoot, packageName) {
-  const stack = [recoverRoot];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || !fs.existsSync(current)) continue;
-    if (path.basename(current) === packageName) return current;
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        stack.push(path.join(current, entry.name));
-      }
-    }
-  }
-  return null;
-}
-
-function clonePathSync(from, to) {
-  const stat = fs.lstatSync(from);
-
-  if (stat.isSymbolicLink()) {
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.symlinkSync(fs.readlinkSync(from), to);
-    return;
-  }
-
-  if (stat.isDirectory()) {
-    fs.mkdirSync(to, { recursive: true });
-    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-      clonePathSync(path.join(from, entry.name), path.join(to, entry.name));
-    }
-    fs.chmodSync(to, stat.mode);
-    return;
-  }
-
-  fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.copyFileSync(from, to);
-  fs.chmodSync(to, stat.mode);
-}
-
-function copyDirIfExists(from, to) {
-  if (!fs.existsSync(from)) return;
-  fs.rmSync(to, { recursive: true, force: true });
-  clonePathSync(from, to);
-}
-
-function extractArchiveSync(file, cwd) {
-  tar.x({
-    cwd,
-    file,
-    strip: 1,
-    sync: true,
-  });
-}
-
-function formatArchiveName(version) {
-  return `anthropic-ai-claude-code-${version}.tgz`;
-}
-
-function formatArchiveFallbackUrl(version) {
-  if (!archiveFallbackBaseUrl) return null;
-  const baseUrl = archiveFallbackBaseUrl.replace(/\/+$/, '');
-  const archiveName = formatArchiveName(version);
-  return `${baseUrl}/${archiveName.slice(0, -4)}/${archiveName}`;
-}
-
-function tryPackArchive(version, outDir) {
-  const result = spawnSync(
-    'npm',
-    ['pack', `@anthropic-ai/claude-code@${version}`, '--silent'],
-    {
-      cwd: outDir,
-      encoding: 'utf8',
-      stdio: 'pipe',
-    },
-  );
-
-  if (result.status === 0) {
-    return true;
-  }
-
-  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
-  process.stderr.write(
-    `npm pack failed for @anthropic-ai/claude-code@${version}, trying fallback archive\n`,
-  );
-  if (output) {
-    process.stderr.write(`${output}\n`);
-  }
-  return false;
-}
-
-function downloadArchiveFallback(version, outDir) {
-  const url = formatArchiveFallbackUrl(version);
-  if (!url) {
-    process.stderr.write('package.json is missing claudeCodeArchiveFallbackBaseUrl\n');
-    process.exit(1);
-  }
-
-  run('npm', ['pack', url, '--silent'], {
-    cwd: outDir,
-  });
-}
-
 async function main() {
   const { version, dir } = parseArgs(process.argv.slice(2));
   const outDir = path.resolve(rootDir, dir);
@@ -168,43 +65,40 @@ async function main() {
   const archiveName = formatArchiveName(version);
   const archivePath = path.join(outDir, archiveName);
   const runtimeDir = path.join(outDir, packageName);
-  const recoverRoot = path.join(outDir, 'recovered');
 
   fs.mkdirSync(outDir, { recursive: true });
-  fs.mkdirSync(recoverRoot, { recursive: true });
 
   if (!fs.existsSync(archivePath)) {
-    const shouldForceFallback =
-      process.env.OPEN_CLAUDE_CODE_FORCE_ARCHIVE_FALLBACK === '1';
-    if (!shouldForceFallback && tryPackArchive(version, outDir)) {
-      // npm pack writes the archive directly into outDir.
-    } else {
-      downloadArchiveFallback(version, outDir);
-    }
+    const tempRoot = createTempRoot('open-claude-code-recover-');
+    const resolvedArchive = await resolveArchive(
+      tempRoot,
+      version,
+      archiveFallbackBaseUrl,
+    );
+    copyIfExists(resolvedArchive.archivePath, archivePath);
   }
 
   fs.rmSync(runtimeDir, { recursive: true, force: true });
-  fs.rmSync(path.join(recoverRoot, packageName), { recursive: true, force: true });
   fs.mkdirSync(runtimeDir, { recursive: true });
 
   extractArchiveSync(archivePath, runtimeDir);
-  run('npx', ['--yes', 'reverse-sourcemap', '-o', 'recovered', `${packageName}/cli.js.map`], {
-    cwd: outDir,
+  const { recoveredDir } = recoverSources({
+    tempRoot: outDir,
+    runtimeDir,
+    packageDirName: packageName,
   });
+  copyIfExists(path.join(recoveredDir, 'src'), path.join(runtimeDir, 'src'));
+  ensureSourceMapComment(path.join(runtimeDir, 'cli.js'));
+  rewriteSourceMapPaths(path.join(runtimeDir, 'cli.js.map'));
 
-  const recoveredDir = findRecoveredDir(recoverRoot, packageName);
-  if (!recoveredDir) {
-    process.stderr.write(`missing recovered source tree for ${packageName}\n`);
-    process.exit(1);
+  const result = spawnSync(process.execPath, [path.join(runtimeDir, 'cli.js'), '--version'], {
+    cwd: rootDir,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
   }
-
-  copyDirIfExists(path.join(recoveredDir, 'src'), path.join(runtimeDir, 'src'));
-  copyDirIfExists(
-    path.join(recoveredDir, 'vendor', 'image-processor-src'),
-    path.join(runtimeDir, 'vendor', 'image-processor-src'),
-  );
-
-  run(process.execPath, [path.join(runtimeDir, 'cli.js'), '--version']);
 
   process.stdout.write(
     [

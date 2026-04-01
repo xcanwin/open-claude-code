@@ -60,8 +60,8 @@ open-claude-code
 
 1. Unpack `@anthropic-ai/claude-code`
 2. Restore `src/` from the source map
-3. Fill in the currently missing stub modules
-4. Rebuild this package's own `runtime/cli.js` inside `temp/source-build/` using pinned dependency versions
+3. Keep the upstream `cli.js`/`cli.js.map`
+4. Recover `src/` beside it for debugging
 
 #### Source Recovery
 
@@ -138,8 +138,8 @@ open-claude-code
 
 1. 解包 `@anthropic-ai/claude-code`
 2. 用 source map 恢复 `src/`
-3. 补齐当前缺失的桩模块
-4. 在 `temp/source-build/` 中按固定依赖版本重建本包自己的 `runtime/cli.js`
+3. 保留上游 `cli.js`/`cli.js.map`
+4. 再把恢复出的 `src/` 放到旁边用于调试
 
 #### 源码恢复
 
